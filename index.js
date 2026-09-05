@@ -15,6 +15,7 @@ const {
   useMultiFileAuthState,
   fetchLatestBaileysVersion,
   DisconnectReason,
+  Browsers,
 } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
@@ -47,7 +48,10 @@ async function startSock() {
     // connection.update لما نستقبل قيمة qr فعليًا.
     printQRInTerminal: false,
     auth: state,
-    browser: ['WhatsApp AI Assistant', 'Chrome', '1.0.0'],
+    // واتساب بقى بيرفض أي عميل بيعلن نفسه كـPlatform.WEB من فبراير 2026،
+    // فبنستخدم هوية "Mac OS Desktop" الجاهزة من Baileys بدل متصفح مخصص
+    // (اللي كان بيتصنّف كـWEB وبيتسبب في رفض الاتصال).
+    browser: Browsers.macOS('Desktop'),
   });
 
   sock.ev.on('creds.update', saveCreds);
