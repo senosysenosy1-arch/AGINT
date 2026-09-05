@@ -19,6 +19,7 @@ const {
 const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const path = require('path');
+const qrcodeTerminal = require('qrcode-terminal');
 
 const { initDb, saveMessage, getRecentMessages } = require('./db');
 const { getReply } = require('./claude');
@@ -41,7 +42,10 @@ async function startSock() {
   const sock = makeWASocket({
     version,
     logger,
-    printQRInTerminal: true,
+    // الإصدارات الحديثة من Baileys شالت خاصية printQRInTerminal التلقائية،
+    // فبنطفيها هنا ونرسم الـQR يدويًا بمكتبة qrcode-terminal تحت في
+    // connection.update لما نستقبل قيمة qr فعليًا.
+    printQRInTerminal: false,
     auth: state,
     browser: ['WhatsApp AI Assistant', 'Chrome', '1.0.0'],
   });
@@ -49,7 +53,14 @@ async function startSock() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    // ده بديل printQRInTerminal القديمة — لما Baileys يبعت qr جديد،
+    // بنرسمه بنفسنا كـASCII في الـLogs عشان تقدر تمسحه من موبايلك.
+    if (qr) {
+      logger.info('📱 امسح الـQR code ده من واتساب (الأجهزة المرتبطة ← ربط جهاز):');
+      qrcodeTerminal.generate(qr, { small: true });
+    }
 
     if (connection === 'close') {
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
