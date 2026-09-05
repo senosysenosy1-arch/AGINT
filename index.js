@@ -35,6 +35,38 @@ const logger = pino({ level: 'info' });
 // إعادة اتصال (reconnect) بتستبدل الـsock القديم بواحد جديد.
 let activeSock = null;
 
+// حماية من حلقة إعادة اتصال سريعة (rapid reconnect loop) — لو حصلت محاولات
+// فاشلة كتير في وقت قصير، بنوقف تمامًا بدل ما نستمر، عشان منخليش واتساب
+// يحس إن ده نمط هجوم آلي ويحظر الرقم أو الـIP. ده أهم جزء أمان في الملف ده.
+const MAX_RAPID_RECONNECTS = 5;
+const RECONNECT_WINDOW_MS = 60 * 1000; // نافذة دقيقة واحدة
+let reconnectAttempts = 0;
+let reconnectWindowStart = Date.now();
+
+function scheduleReconnect() {
+  const now = Date.now();
+  if (now - reconnectWindowStart > RECONNECT_WINDOW_MS) {
+    // نافذة جديدة — نصفّر العداد
+    reconnectWindowStart = now;
+    reconnectAttempts = 0;
+  }
+  reconnectAttempts += 1;
+
+  if (reconnectAttempts > MAX_RAPID_RECONNECTS) {
+    logger.error(
+      `🛑 ${MAX_RAPID_RECONNECTS} محاولات فاشلة خلال دقيقة — هنوقف السيرفر تمامًا عشان منتسببش في حظر من واتساب. ` +
+      'شغّل السيرفر يدويًا تاني بعد ما تستنى شوية (10-15 دقيقة على الأقل).'
+    );
+    process.exit(1);
+  }
+
+  // تأخير تصاعدي: 5 ثواني × رقم المحاولة، بحد أقصى 30 ثانية — بيدي فرصة
+  // حقيقية للـQR يظهر ويتمسح، بدل محاولات متلاحقة كل أجزاء من الثانية.
+  const delayMs = Math.min(5000 * reconnectAttempts, 30000);
+  logger.warn(`⏳ هنعيد المحاولة بعد ${delayMs / 1000} ثانية (محاولة ${reconnectAttempts}/${MAX_RAPID_RECONNECTS})...`);
+  setTimeout(() => startSock(), delayMs);
+}
+
 async function startSock() {
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER);
   const { version, isLatest } = await fetchLatestBaileysVersion();
@@ -75,10 +107,11 @@ async function startSock() {
       );
 
       if (shouldReconnect) {
-        startSock();
+        scheduleReconnect();
       }
     } else if (connection === 'open') {
       activeSock = sock;
+      reconnectAttempts = 0; // اتصال ناجح — نصفّر العداد عشان مشاكل مستقبلية متتأثرش بمحاولات قديمة
       logger.info('✅ الاتصال بواتساب اتفتح بنجاح.');
     }
   });
