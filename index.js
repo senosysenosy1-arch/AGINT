@@ -50,6 +50,28 @@ async function startSock() {
     browser: ['WhatsApp AI Assistant', 'Chrome', '1.0.0'],
   });
 
+  // Pairing Code — بديل عن مسح QR، خصوصًا مناسب لبيئة زي Railway اللي
+  // واجهة اللوجز فيها ممكن تقطّع رسم الـQR. لو حطيت WHATSAPP_PHONE_NUMBER
+  // في .env، هنطلب كود من 8 أرقام تكتبه يدويًا في واتساب بدل ما تمسح صورة.
+  if (!state.creds.registered) {
+    const phoneNumber = (process.env.WHATSAPP_PHONE_NUMBER || '').replace(/[^0-9]/g, '');
+
+    if (phoneNumber) {
+      try {
+        const code = await sock.requestPairingCode(phoneNumber);
+        const formatted = code.match(/.{1,4}/g)?.join('-') || code;
+        logger.info('=========================================');
+        logger.info(`🔑 كود الربط بتاعك هو: ${formatted}`);
+        logger.info('من واتساب: الإعدادات ← الأجهزة المرتبطة ← ربط جهاز ← اختر "ربط برقم الهاتف بدلاً من ذلك" واكتب الكود ده.');
+        logger.info('=========================================');
+      } catch (err) {
+        logger.error(err, 'فشل طلب كود الربط — تأكد إن رقم WHATSAPP_PHONE_NUMBER صح وبالصيغة الدولية من غير + أو مسافات');
+      }
+    } else {
+      logger.warn('WHATSAPP_PHONE_NUMBER مش موجود في .env — هنعتمد على مسح QR code بدلاً من كود الربط.');
+    }
+  }
+
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
